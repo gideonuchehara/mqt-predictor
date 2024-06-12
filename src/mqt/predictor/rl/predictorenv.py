@@ -97,9 +97,10 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information."""
+        # print("started !!!")
         self.used_actions.append(str(self.action_set[action].get("name")))
         altered_qc = self.apply_action(action)
-        if not altered_qc:
+        if not altered_qc:  # this is if altered_qc = None, i.e. the action does not result in any chages in the circuit
             return (
                 rl.helper.create_feature_dict(self.state),
                 0,
@@ -136,6 +137,8 @@ class PredictorEnv(Env):  # type: ignore[misc]
         if self.reward_function == "expected_fidelity":
             return reward.expected_fidelity(self.state, self.device)
         # else: can only be "critical_depth"
+        elif self.reward_function == "adjacency_matrix_sum":
+            return reward.adjacency_matrix_sum(self.state)
         return reward.crit_depth(self.state)
 
     def render(self) -> None:
@@ -223,7 +226,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
                             DoWhileController(
                                 action["transpile_pass"](
                                     self.device.basis_gates,
-                                    CouplingMap(self.device.coupling_map) if self.layout is not None else None,
+                                    # CouplingMap(self.device.coupling_map) if self.layout is not None else None, # commented
                                 ),
                                 do_while=action["do_while"],
                             ),
@@ -240,35 +243,35 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
                     self.error_occured = True
                     return None
-                if (
-                    action_index
-                    in self.actions_layout_indices
-                    + self.actions_mapping_indices
-                    + self.actions_final_optimization_indices
-                ):
-                    if action["name"] == "VF2PostLayout":
-                        assert pm.property_set["VF2PostLayout_stop_reason"] is not None
-                        post_layout = pm.property_set["post_layout"]
-                        if post_layout:
-                            altered_qc, pm = rl.helper.postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
-                    elif action["name"] == "VF2Layout":
-                        if pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND:
-                            assert pm.property_set["layout"]
-                    else:
-                        assert pm.property_set["layout"]
+                # if (
+                #     action_index
+                #     in self.actions_layout_indices  # commented
+                #     + self.actions_mapping_indices  # commented
+                #     + self.actions_final_optimization_indices
+                # ):
+                #     if action["name"] == "VF2PostLayout":
+                #         assert pm.property_set["VF2PostLayout_stop_reason"] is not None
+                #         post_layout = pm.property_set["post_layout"]
+                #         if post_layout:
+                #             altered_qc, pm = rl.helper.postprocess_vf2postlayout(altered_qc, post_layout, self.layout)
+                #     elif action["name"] == "VF2Layout":
+                #         if pm.property_set["VF2Layout_stop_reason"] == VF2LayoutStopReason.SOLUTION_FOUND:
+                #             assert pm.property_set["layout"]
+                #     else:
+                #         assert pm.property_set["layout"]
 
-                    if pm.property_set["layout"]:
-                        self.layout = TranspileLayout(
-                            initial_layout=pm.property_set["layout"],
-                            input_qubit_mapping=pm.property_set["original_qubit_indices"],
-                            final_layout=pm.property_set["final_layout"],
-                            _output_qubit_list=altered_qc.qubits,
-                            _input_qubit_count=self.num_qubits_uncompiled_circuit,
-                        )
+                #     if pm.property_set["layout"]:
+                #         self.layout = TranspileLayout(
+                #             initial_layout=pm.property_set["layout"],
+                #             input_qubit_mapping=pm.property_set["original_qubit_indices"],
+                #             final_layout=pm.property_set["final_layout"],
+                #             _output_qubit_list=altered_qc.qubits,
+                #             _input_qubit_count=self.num_qubits_uncompiled_circuit,
+                #         )
 
-                elif action_index in self.actions_routing_indices:
-                    assert self.layout is not None
-                    self.layout.final_layout = pm.property_set["final_layout"]
+                # elif action_index in self.actions_routing_indices:
+                #     assert self.layout is not None
+                #     self.layout.final_layout = pm.property_set["final_layout"]
 
             elif action["origin"] == "tket":
                 try:
@@ -279,9 +282,9 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     qubit_map = {qbs[i]: Qubit("q", i) for i in range(len(qbs))}
                     tket_qc.rename_units(qubit_map)  # type: ignore[arg-type]
                     altered_qc = tk_to_qiskit(tket_qc)
-                    if action_index in self.actions_routing_indices:
-                        assert self.layout is not None
-                        self.layout.final_layout = rl.helper.final_layout_pytket_to_qiskit(tket_qc, altered_qc)
+                    # if action_index in self.actions_routing_indices:
+                    #     assert self.layout is not None
+                    #     self.layout.final_layout = rl.helper.final_layout_pytket_to_qiskit(tket_qc, altered_qc)
 
                 except Exception:
                     logger.exception(
@@ -298,13 +301,13 @@ class PredictorEnv(Env):  # type: ignore[misc]
                     if action_index in self.actions_opt_indices + self.actions_synthesis_indices:
                         bqskit_compiled_qc = transpile_pass(bqskit_qc)
                         altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
-                    elif action_index in self.actions_mapping_indices:
-                        bqskit_compiled_qc, initial_layout, final_layout = transpile_pass(bqskit_qc)
-                        altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
-                        layout = rl.helper.final_layout_bqskit_to_qiskit(
-                            initial_layout, final_layout, altered_qc, self.state
-                        )
-                        self.layout = layout
+                    # elif action_index in self.actions_mapping_indices:
+                    #     bqskit_compiled_qc, initial_layout, final_layout = transpile_pass(bqskit_qc)
+                    #     altered_qc = bqskit_to_qiskit(bqskit_compiled_qc)
+                    #     layout = rl.helper.final_layout_bqskit_to_qiskit(
+                    #         initial_layout, final_layout, altered_qc, self.state
+                    #     )
+                    #     self.layout = layout
                 except Exception:
                     logger.exception(
                         "Error in executing BQSKit transpile pass for {action} at step {i} for {filename}".format(
@@ -332,19 +335,22 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
         if not only_nat_gates:
             actions = self.actions_synthesis_indices + self.actions_opt_indices
-            if self.layout is not None:
-                actions += self.actions_routing_indices
+            # if self.layout is not None:
+            #     actions += self.actions_routing_indices
             return actions
 
-        check_mapping = CheckMap(coupling_map=CouplingMap(self.device.coupling_map))
-        check_mapping(self.state)
-        mapped = check_mapping.property_set["is_swap_mapped"]
+        # check_mapping = CheckMap(coupling_map=CouplingMap(self.device.coupling_map))
+        # check_mapping(self.state)
+        # mapped = check_mapping.property_set["is_swap_mapped"]
 
-        if mapped and self.layout is not None:
-            return [self.action_terminate_index, *self.actions_opt_indices]
+        # if mapped and self.layout is not None:
+        #     return [self.action_terminate_index, *self.actions_opt_indices]
 
-        if self.layout is not None:
-            return self.actions_routing_indices
+        # if self.layout is not None:
+        #     return self.actions_routing_indices
 
         # No layout applied yet
-        return self.actions_mapping_indices + self.actions_layout_indices + self.actions_opt_indices
+        # return self.actions_mapping_indices + self.actions_layout_indices + self.actions_opt_indices
+
+        # My addition*******************
+        return [self.action_terminate_index, *self.actions_opt_indices]

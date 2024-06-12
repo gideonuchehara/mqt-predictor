@@ -97,7 +97,7 @@ class PredictorEnv(Env):  # type: ignore[misc]
 
     def step(self, action: int) -> tuple[dict[str, Any], float, bool, bool, dict[Any, Any]]:
         """Executes the given action and returns the new state, the reward, whether the episode is done, whether the episode is truncated and additional information."""
-        print("started !!!")
+        # print("started !!!")
         self.used_actions.append(str(self.action_set[action].get("name")))
         altered_qc = self.apply_action(action)
         if not altered_qc:  # this is if altered_qc = None, i.e. the action does not result in any chages in the circuit
